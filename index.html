@@ -52,7 +52,11 @@
     }
 
     var height, width, lat_ratio, long_ratio;
-    var differenceToGMT = (new Date()).dst() ? 25200 : 28800;
+    var differenceToGMT;
+
+    function updateDifferenceToGMT() {
+      differenceToGMT = (new Date()).dst() ? 25200 : 28800;
+    }
 
     $(document).ready(function() {
       $('.map').load(function() {
@@ -76,12 +80,6 @@
             }
           }, 60000);
         }, (60-(new Date()).getSeconds())*1000);
-
-        planes = $('.plane');
-        explosions = $('.explosion');
-        for(i = 0; i < planes.length; i++) {
-          animatePlane($(planes[i]), $(explosions[i]));
-        }
       });
 
       $(window).on('resize', function() {
@@ -92,44 +90,6 @@
         });
       });
     });
-
-    function animatePlane(plane, explosion) {
-      map_items = $('.map_item');
-      if(map_items.length > 1) {
-        from_index = Math.floor(Math.random() * map_items.length);
-        to_index = Math.floor(Math.random() * map_items.length);
-        from_city = $(map_items[from_index]);
-        to_city = $(map_items[to_index]);
-        from_top = parseFloat(from_city.css("top"))+parseFloat(from_city.height())/2;
-        from_left = parseFloat(from_city.css("left"))+parseFloat(from_city.width())/2;
-        to_top = parseFloat(to_city.css("top"))+parseFloat(to_city.height())/2;
-        to_left = parseFloat(to_city.css("left"))+parseFloat(to_city.width())/2;
-        time = Math.sqrt(Math.pow((to_top-from_top), 2)+Math.pow((to_left-from_left), 2))*3.0;
-        plane.show();
-        plane.css({
-          top: from_top+"px",
-          left: from_left+"px"
-        });
-        explosion.css({
-          top: to_top+"px",
-          left: to_left+"px"
-        });
-        plane.animate({
-          top: to_top+"px",
-          left: to_left+"px"
-        }, time);
-        setTimeout(function() {
-          plane.hide();
-          explosion.show();
-        }, time);
-        setTimeout(function() {
-          explosion.hide();
-        }, 1000);
-        setTimeout(function(){
-          animatePlane(plane, explosion);
-        }, time+1000);
-      }
-    }
 
     function calculateImageDimensions() {
       image = $('img');
@@ -147,7 +107,7 @@
         });
       } else {
         $.each(map_item, function(i, item) {
-          incrementTime($(this));
+          getTimeWithoutAPI($(this));
         });
       }
     }
@@ -211,6 +171,7 @@
     function sendAPIRequest(item) {
       current_lat = parseFloat(item.attr("lat"));
       current_long = parseFloat(item.attr("long"));
+      updateDifferenceToGMT();
       epoch = Math.round(new Date().getTime()/1000.0)+differenceToGMT;
       // item.text(item.attr("name")+" "+(new Date()).getCurrentTimeIn12HourFormat());
       // drawPoint(item);
@@ -223,38 +184,52 @@
           key: "AIzaSyCusD6rxTGfrs0rJ-5AmOk6XJzdFVGNVxY"
         },
         success: function(response) {
-          // console.log(response);
-          current_time = Math.round(new Date().getTime()/1000.0)+differenceToGMT+response.dstOffset+response.rawOffset;
-          item.text(item.attr("name")+" "+(new Date(current_time*1000)).getCurrentTimeIn12HourFormat());
-          drawPoint(item);
+          if(response.dstOffset == undefined || response.rawOffset == undefined) {
+            getTimeWithoutAPI(item);
+          } else {
+            current_time = Math.round(new Date().getTime()/1000.0)+differenceToGMT+response.dstOffset+response.rawOffset;
+            item.attr("dstOffset", response.dstOffset);
+            item.attr("rawOffset", response.rawOffset);
+            item.text(item.attr("name")+" "+(new Date(current_time*1000)).getCurrentTimeIn12HourFormat());
+            drawPoint(item);
+          }
         },
         error: function(msg) {
           console.log(msg);
+          getTimeWithoutAPI(item);
         }
       });
     }
 
-    function incrementTime(item) {
-      values = item.text().split(":");
-      name = values[0].substr(0, values[0].length-2);
-      hour = parseInt(values[0].substr(values[0].length-2));
-      minutes = parseInt(values[1].substr(0, 2));
-      ampm = values[1].substr(values[1].length-2);
-      minutes += 1;
-      if(minutes >= 60) {
-        minutes = minutes % 60;
-        hour += 1;
-        if(hour >= 12 && ampm == "PM") {
-          hour = hour % 12;
-          ampm = "AM";
-        } else if(hour >= 12 && ampm == "AM") {
-          hour = hour != 12 ? hour - 12 : hour;
-          ampm = "PM";
-        }
-      }
-      new_time = padTimeString(hour)+":"+padTimeString(minutes)+" "+ampm;
-      item.text(name+new_time);
+    // function incrementTime(item) {
+    //   values = item.text().split(":");
+    //   name = values[0].substr(0, values[0].length-2);
+    //   hour = parseInt(values[0].substr(values[0].length-2));
+    //   minutes = parseInt(values[1].substr(0, 2));
+    //   ampm = values[1].substr(values[1].length-2);
+    //   minutes += 1;
+    //   if(minutes >= 60) {
+    //     minutes = minutes % 60;
+    //     hour += 1;
+    //     if(hour >= 12 && ampm == "PM") {
+    //       hour = hour % 12;
+    //       ampm = "AM";
+    //     } else if(hour >= 12 && ampm == "AM") {
+    //       hour = hour != 12 ? hour - 12 : hour;
+    //       ampm = "PM";
+    //     }
+    //   }
+    //   new_time = padTimeString(hour)+":"+padTimeString(minutes)+" "+ampm;
+    //   item.text(name+new_time);
+    // }
+
+    function getTimeWithoutAPI(item) {
+      dstOffset = parseInt(item.attr("dstOffset"));
+      rawOffset = parseInt(item.attr("rawOffset"));
+      current_time = Math.round(new Date().getTime()/1000.0)+differenceToGMT+dstOffset+rawOffset;
+      item.text(item.attr("name")+" "+(new Date(current_time*1000)).getCurrentTimeIn12HourFormat());
     }
+
   </script>
 </head>
 <body>
@@ -285,19 +260,5 @@
   <div class="map_item" lat="1.290270" long="103.851959" name="Singapore"></div>
   <div class="map_item" lat="-31.953512" long="115.857048" name="Perth"></div>
   <div class="map_item" lat="-33.865143" long="151.209900" name="Sydney"></div>
-  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
-  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
-  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
-  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
-  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
-  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
-  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
-  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
-  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
-  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
-  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
-  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
-  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
-  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
 </body>
 </html>
