@@ -42,7 +42,9 @@
     }
 
     Date.prototype.getCurrentTimeIn12HourFormat = function() {
-      if(this.getHours() > 12) {
+      if(this.getHours() == 12) {
+        return padTimeString(this.getHours())+":"+padTimeString(this.getMinutes())+" PM";
+      } else if(this.getHours() > 12) {
         return padTimeString(this.getHours()-12)+":"+padTimeString(this.getMinutes())+" PM";
       } else {
         return padTimeString(this.getHours())+":"+padTimeString(this.getMinutes())+" AM";
@@ -53,7 +55,7 @@
     var differenceToGMT = (new Date()).dst() ? 25200 : 28800;
 
     $(document).ready(function() {
-      $('img').load(function() {
+      $('.map').load(function() {
         calculateImageDimensions();
 
         // draw the items
@@ -66,10 +68,20 @@
         populateTime(true);
         setTimeout(function() {
           populateTime();
-          for(i = 0; i < 60; i++) {
-            populateTime();
-          }
+          setInterval(function() {
+            if((new Date()).getMinutes() == 0) {
+              populateTime(true);
+            } else {
+              populateTime();
+            }
+          }, 60000);
         }, (60-(new Date()).getSeconds())*1000);
+
+        planes = $('.plane');
+        explosions = $('.explosion');
+        for(i = 0; i < planes.length; i++) {
+          animatePlane($(planes[i]), $(explosions[i]));
+        }
       });
 
       $(window).on('resize', function() {
@@ -80,6 +92,44 @@
         });
       });
     });
+
+    function animatePlane(plane, explosion) {
+      map_items = $('.map_item');
+      if(map_items.length > 1) {
+        from_index = Math.floor(Math.random() * map_items.length);
+        to_index = Math.floor(Math.random() * map_items.length);
+        from_city = $(map_items[from_index]);
+        to_city = $(map_items[to_index]);
+        from_top = parseFloat(from_city.css("top"))+parseFloat(from_city.height())/2;
+        from_left = parseFloat(from_city.css("left"))+parseFloat(from_city.width())/2;
+        to_top = parseFloat(to_city.css("top"))+parseFloat(to_city.height())/2;
+        to_left = parseFloat(to_city.css("left"))+parseFloat(to_city.width())/2;
+        time = Math.sqrt(Math.pow((to_top-from_top), 2)+Math.pow((to_left-from_left), 2))*3.0;
+        plane.show();
+        plane.css({
+          top: from_top+"px",
+          left: from_left+"px"
+        });
+        explosion.css({
+          top: to_top+"px",
+          left: to_left+"px"
+        });
+        plane.animate({
+          top: to_top+"px",
+          left: to_left+"px"
+        }, time);
+        setTimeout(function() {
+          plane.hide();
+          explosion.show();
+        }, time);
+        setTimeout(function() {
+          explosion.hide();
+        }, 1000);
+        setTimeout(function(){
+          animatePlane(plane, explosion);
+        }, time+1000);
+      }
+    }
 
     function calculateImageDimensions() {
       image = $('img');
@@ -113,6 +163,35 @@
     }
 
     function repositionOverlappingMapItems(item, top, left, height, width) {
+      overlaps = [];
+      overlaps.push(item);
+      overlaps = $.merge(overlaps, getOverlappingMapItems(item, top, left, height, width));
+      overlaps.sort(function(a, b) {
+        return parseFloat(b.css("top"))-parseFloat(a.css("top"));
+      });
+      last_called = 0;
+      i = 1; length = overlaps.length;
+      while(i < length) {
+        overlaps[i].css({ top: parseFloat(overlaps[i-1].css("top"))+overlaps[i-1].height()+10+"px" });
+        if(last_called != i) {
+          new_overlaps = getOverlappingMapItems(overlaps[i], parseInt(overlaps[i].css("top")), parseInt(overlaps[i].css("left")), overlaps[i].height(), overlaps[i].width());
+          overlaps = $.merge(overlaps, new_overlaps);
+          length = overlaps.length;
+          if(new_overlaps.length > 0) {
+            overlaps.sort(function(a, b) {
+              return parseFloat(b.css("top"))-parseFloat(a.css("top"));
+            });
+            last_called = i;
+            i -= 1;
+          } else {
+            last_called = i;
+          }
+        }
+        i += 1;
+      }
+    }
+
+    function getOverlappingMapItems(item, top, left, height, width) {
       map_items = $('.map_item');
       overlaps = [];
       $.each(map_items, function(i, curr) {
@@ -126,20 +205,15 @@
           }
         }
       });
-      overlaps.push(item);
-      overlaps.sort(function(a, b) {
-        return parseFloat(b.css("top")-parseFloat(a.css("top")));
-      });
-      for(i = 1; i < overlaps.length; i++) {
-        overlaps[i].css({ top: parseFloat(overlaps[i-1].css("top"))+overlaps[i-1].height()+10+"px" });
-        repositionOverlappingMapItems(overlaps[i], parseInt(overlaps[i].css("top")), parseInt(overlaps[i].css("left")), overlaps[i].height(), overlaps[i].width());
-      }
+      return overlaps;
     }
 
     function sendAPIRequest(item) {
       current_lat = parseFloat(item.attr("lat"));
       current_long = parseFloat(item.attr("long"));
       epoch = Math.round(new Date().getTime()/1000.0)+differenceToGMT;
+      // item.text(item.attr("name")+" "+(new Date()).getCurrentTimeIn12HourFormat());
+      // drawPoint(item);
       $.ajax({
         method: "GET",
         url: "https://maps.googleapis.com/maps/api/timezone/json",
@@ -161,14 +235,31 @@
     }
 
     function incrementTime(item) {
-    //   values = item.split(":");
-    //   hour = values[0][va]
+      values = item.text().split(":");
+      name = values[0].substr(0, values[0].length-2);
+      hour = parseInt(values[0].substr(values[0].length-2));
+      minutes = parseInt(values[1].substr(0, 2));
+      ampm = values[1].substr(values[1].length-2);
+      minutes += 1;
+      if(minutes >= 60) {
+        minutes = minutes % 60;
+        hour += 1;
+        if(hour >= 12 && ampm == "PM") {
+          hour = hour % 12;
+          ampm = "AM";
+        } else if(hour >= 12 && ampm == "AM") {
+          hour = hour != 12 ? hour - 12 : hour;
+          ampm = "PM";
+        }
+      }
+      new_time = padTimeString(hour)+":"+padTimeString(minutes)+" "+ampm;
+      item.text(name+new_time);
     }
   </script>
 </head>
 <body>
   <!-- Height: 1025px Width: 2048px -->
-  <img src="earth.jpg" alt="">
+  <img class="map" src="earth.jpg" alt="">
   <!-- Latitude: -85 to 85 Longitude: -180 to 180 -->
   <div class="map_item" lat="-6.21462" long="106.84513" name="Jakarta"></div>
   <div class="map_item" lat="34.052235" long="-118.243683" name="Los Angeles"></div>
@@ -194,5 +285,19 @@
   <div class="map_item" lat="1.290270" long="103.851959" name="Singapore"></div>
   <div class="map_item" lat="-31.953512" long="115.857048" name="Perth"></div>
   <div class="map_item" lat="-33.865143" long="151.209900" name="Sydney"></div>
+  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
+  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
+  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
+  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
+  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
+  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
+  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
+  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
+  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
+  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
+  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
+  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
+  <img class="plane" src="plane.png" alt="" style="height: 30px; width: 30px; display: none; position: absolute" />
+  <img class="explosion" src="explosion.gif" alt="" style="height: 50px; width: 50px; display: none; position: absolute" />
 </body>
 </html>
