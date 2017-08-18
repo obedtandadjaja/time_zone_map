@@ -25,7 +25,7 @@
     }
   </style>
   <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js" type="text/javascript"></script>
-    <script>
+  <script>
     function padTimeString(str) {
       return str/10 < 1 ? "0"+str : str;
     }
@@ -41,17 +41,17 @@
       return this.getTimezoneOffset() < this.stdTimezoneOffset();
     }
 
-    Date.prototype.getCurrentTimeIn12HourFormat = function() {
-      if(this.getHours() == 12) {
-        return padTimeString(this.getHours())+":"+padTimeString(this.getMinutes())+" PM";
-      } else if(this.getHours() > 12) {
-        return padTimeString(this.getHours()-12)+":"+padTimeString(this.getMinutes())+" PM";
+    Date.prototype.getCurrentTimeIn12HourFormat = function () {
+      if (this.getHours() == 0) {
+        return 12 + ":" + padTimeString(this.getMinutes()) + " AM";
+      } else if (this.getHours() > 12) {
+        return padTimeString(this.getHours() - 12) + ":" + padTimeString(this.getMinutes()) + " PM";
       } else {
-        return padTimeString(this.getHours())+":"+padTimeString(this.getMinutes())+" AM";
+        return padTimeString(this.getHours()) + ":" + padTimeString(this.getMinutes()) + " AM";
       }
     }
 
-    var height, width, lat_ratio, long_ratio;
+    var height, width, lat_ratio, long_ratio, font_size;
     var differenceToGMT;
 
     function updateDifferenceToGMT() {
@@ -59,37 +59,49 @@
     }
 
     $(document).ready(function() {
-      $('.map').load(function() {
-        calculateImageDimensions();
+      setup();
 
-        // draw the items
-        map_item = $('.map_item');
-        $.each(map_item, function(i, item) {
-          drawPoint($(this));
-        });
-
-        // handle time
-        populateTime(true);
-        setTimeout(function() {
-          populateTime();
-          setInterval(function() {
-            if((new Date()).getMinutes() == 0) {
-              populateTime(true);
-            } else {
-              populateTime();
-            }
-          }, 60000);
-        }, (60-(new Date()).getSeconds())*1000);
+      $('.map').load(function () {
+        redraw();
       });
 
-      $(window).on('resize', function() {
-        calculateImageDimensions();
-        map_item = $('.map_item');
-        $.each(map_item, function(i, item) {
-          drawPoint($(this));
-        });
+      $(window).on('resize', function () {
+        setTimeout(function () {
+          calculateImageDimensions();
+          redraw();
+        }, 200);
       });
     });
+
+    function setup() {
+      calculateImageDimensions();
+      updateDifferenceToGMT();
+
+      // handle time
+      populateTime(true);
+      setTimeout(function () {
+        populateTime();
+        setInterval(function () {
+          if ((new Date()).getMinutes() == 0) {
+            populateTime(true);
+          } else {
+            populateTime();
+          }
+        }, 60000);
+      }, (60 - (new Date()).getSeconds()) * 1000);
+    }
+
+    function redraw() {
+      calculateImageDimensions();
+      map_item = $('.map_item');
+      map_item.sort(function (a, b) {
+        return parseFloat($(b).attr("lat")) - parseFloat($(a).attr("lat"));
+      });
+      $('.map_item').css({ "font-size": font_size + "px" });
+      $.each(map_item, function (i, item) {
+        drawPoint($(this));
+      });
+    }
 
     function calculateImageDimensions() {
       image = $('img');
@@ -116,8 +128,8 @@
       current_lat = parseFloat(item.attr("lat"));
       current_long = parseFloat(item.attr("long"));
       item.css({
-        top: (height/2)-(lat_ratio*current_lat)-(item.height()/2)+"px",
-        left: (width/2)+(long_ratio*current_long)-(item.width()/2)+"px"
+        top: (height / 2) - (lat_ratio * current_lat) - (item.height() / 2) + "px",
+        left: (width / 2) + (long_ratio * current_long) - (item.width() / 2) + "px"
       });
       repositionOverlappingMapItems(item, parseInt(item.css("top")), parseInt(item.css("left")), item.height(), item.width());
     }
@@ -126,26 +138,24 @@
       overlaps = [];
       overlaps.push(item);
       overlaps = $.merge(overlaps, getOverlappingMapItems(item, top, left, height, width));
-      overlaps.sort(function(a, b) {
-        return parseFloat(b.css("top"))-parseFloat(a.css("top"));
+      overlaps.sort(function (a, b) {
+        return parseFloat(b.attr("lat")) - parseFloat(a.attr("lat"));
       });
       last_called = 0;
       i = 1; length = overlaps.length;
-      while(i < length) {
-        overlaps[i].css({ top: parseFloat(overlaps[i-1].css("top"))+overlaps[i-1].height()+10+"px" });
-        if(last_called != i) {
+      while (i < length) {
+        overlaps[i].css({ top: Math.ceil(parseFloat(overlaps[i - 1].css("top")) + parseFloat(overlaps[i - 1].height())) + 10 + "px" });
+        if (last_called != i) {
           new_overlaps = getOverlappingMapItems(overlaps[i], parseInt(overlaps[i].css("top")), parseInt(overlaps[i].css("left")), overlaps[i].height(), overlaps[i].width());
           overlaps = $.merge(overlaps, new_overlaps);
           length = overlaps.length;
-          if(new_overlaps.length > 0) {
-            overlaps.sort(function(a, b) {
-              return parseFloat(b.css("top"))-parseFloat(a.css("top"));
+          if (new_overlaps.length > 0) {
+            overlaps.sort(function (a, b) {
+              return parseFloat(b.css("lat")) - parseFloat(a.css("lat"));
             });
-            last_called = i;
             i -= 1;
-          } else {
-            last_called = i;
           }
+          last_called = i;
         }
         i += 1;
       }
@@ -154,13 +164,13 @@
     function getOverlappingMapItems(item, top, left, height, width) {
       map_items = $('.map_item');
       overlaps = [];
-      $.each(map_items, function(i, curr) {
+      $.each(map_items, function (i, curr) {
         cur_top = parseFloat($(this).css("top"));
         cur_left = parseFloat($(this).css("left"));
         cur_height = $(this).height();
         cur_width = $(this).width();
-        if($(this).attr("name") !== item.attr("name")) {
-          if(top+height > cur_top && left+width > cur_left && top < cur_top+cur_height && left < cur_left+cur_width) {
+        if ($(this).attr("name") !== item.attr("name")) {
+          if ((top + height) > cur_top && (left + width) > cur_left && top < (cur_top + cur_height) && left < (cur_left + cur_width)) {
             overlaps.push($(this));
           }
         }
@@ -173,8 +183,6 @@
       current_long = parseFloat(item.attr("long"));
       updateDifferenceToGMT();
       epoch = Math.round(new Date().getTime()/1000.0)+differenceToGMT;
-      // item.text(item.attr("name")+" "+(new Date()).getCurrentTimeIn12HourFormat());
-      // drawPoint(item);
       $.ajax({
         method: "GET",
         url: "https://maps.googleapis.com/maps/api/timezone/json",
@@ -201,28 +209,6 @@
       });
     }
 
-    // function incrementTime(item) {
-    //   values = item.text().split(":");
-    //   name = values[0].substr(0, values[0].length-2);
-    //   hour = parseInt(values[0].substr(values[0].length-2));
-    //   minutes = parseInt(values[1].substr(0, 2));
-    //   ampm = values[1].substr(values[1].length-2);
-    //   minutes += 1;
-    //   if(minutes >= 60) {
-    //     minutes = minutes % 60;
-    //     hour += 1;
-    //     if(hour >= 12 && ampm == "PM") {
-    //       hour = hour % 12;
-    //       ampm = "AM";
-    //     } else if(hour >= 12 && ampm == "AM") {
-    //       hour = hour != 12 ? hour - 12 : hour;
-    //       ampm = "PM";
-    //     }
-    //   }
-    //   new_time = padTimeString(hour)+":"+padTimeString(minutes)+" "+ampm;
-    //   item.text(name+new_time);
-    // }
-
     function getTimeWithoutAPI(item) {
       dstOffset = parseInt(item.attr("dstOffset"));
       rawOffset = parseInt(item.attr("rawOffset"));
@@ -241,7 +227,6 @@
   <div class="map_item" lat="41.881832" long="-87.623177" name="Chicago"></div>
   <div class="map_item" lat="40.730610" long="-73.935242" name="New York"></div>
   <div class="map_item" lat="52.520008" long="13.404954" name="Berlin"></div>
-  <div class="map_item" lat="51.508530" long="-0.076132" name="London"></div>
   <div class="map_item" lat="48.864716" long="2.349014" name="Paris"></div>
   <div class="map_item" lat="19.432608" long="-99.133209" name="Mexico City"></div>
   <div class="map_item" lat="35.652832" long="139.839478" name="Tokyo"></div>
@@ -260,5 +245,6 @@
   <div class="map_item" lat="1.290270" long="103.851959" name="Singapore"></div>
   <div class="map_item" lat="-31.953512" long="115.857048" name="Perth"></div>
   <div class="map_item" lat="-33.865143" long="151.209900" name="Sydney"></div>
+  <div class="map_item" lat="51.508530" long="-0.076132" name="London"></div>
 </body>
 </html>
